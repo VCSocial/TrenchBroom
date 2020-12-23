@@ -29,7 +29,8 @@
 #include "Model/TagVisitor.h"
 #include "Model/WorldNode.h"
 
-#include <kdl/result.h>
+#include <kdl/overload.h>
+#include <kdl/vector_utils.h>
 
 #include <vecmath/ray.h>
 
@@ -38,8 +39,13 @@
 
 namespace TrenchBroom {
     namespace Model {
+        struct GroupNode::SharedData {
+            std::vector<GroupNode*> linkedGroups;
+        };
+
         GroupNode::GroupNode(Group group) :
         m_group(std::move(group)),
+        m_sharedData(std::make_shared<SharedData>()),
         m_editState(EditState::Closed),
         m_boundsValid(false) {}
 
@@ -83,6 +89,32 @@ namespace TrenchBroom {
 
         void GroupNode::setPersistentId(const IdType persistentId) {
             m_persistentId = persistentId;
+        }
+
+        const std::vector<GroupNode*> GroupNode::linkedGroups() const {
+            return m_sharedData->linkedGroups;
+        }
+
+        bool GroupNode::inLinkSetWith(const GroupNode& groupNode) const {
+            return groupNode.m_sharedData == m_sharedData;
+        }
+
+        void GroupNode::addToLinkSet(GroupNode& groupNode) {
+            groupNode.m_sharedData = m_sharedData;
+        }
+
+        bool GroupNode::linked() const {
+            return kdl::vec_contains(m_sharedData->linkedGroups, this);
+        }
+
+        void GroupNode::link() {
+            assert(!linked());
+            m_sharedData->linkedGroups.push_back(this);
+        }
+
+        void GroupNode::unlink() {
+            assert(linked());
+            m_sharedData->linkedGroups = kdl::vec_erase(std::move(m_sharedData->linkedGroups), this);
         }
 
         void GroupNode::setEditState(const EditState editState) {

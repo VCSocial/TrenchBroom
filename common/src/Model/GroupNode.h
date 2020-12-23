@@ -30,14 +30,29 @@
 
 #include <vecmath/bbox.h>
 
+#include <memory>
 #include <optional>
 #include <string>
 #include <vector>
 
 namespace TrenchBroom {
     namespace Model {
+        /**
+         * A node that groups other nodes to make them editable as one. Multiple groups can form a
+         * link set; a link set is a set of groups such that changes to the children of of one of the
+         * member of the link set are reflected in the other members of the link set.
+         *
+         * A group can be in one of three states: singleton, linkable, and linked. A singleton group
+         * is not part of a link set. A linkable group is part of a link set, but it is disconnected
+         * from it, so that changes to the other groups are not reflected in the linkable group, and
+         * changes to the disconnected member are also not reflected in the other members of the link
+         * set. A linked group is a linkable group that is connected to the set, so that changes to
+         * the other link set members are reflected in it and vice versa.
+         */
         class GroupNode : public Node, public Object {
         private:
+            struct SharedData;
+
             enum class EditState {
                 Open,
                 Closed,
@@ -45,6 +60,7 @@ namespace TrenchBroom {
             };
 
             Group m_group;
+            std::shared_ptr<SharedData> m_sharedData;
             EditState m_editState;
             mutable vm::bbox3 m_logicalBounds;
             mutable vm::bbox3 m_physicalBounds;
@@ -69,6 +85,45 @@ namespace TrenchBroom {
 
             const std::optional<IdType>& persistentId() const;
             void setPersistentId(IdType persistentId);
+
+            /**
+             * Returns the members of the link set. If this group is disconnected from the link set,
+             * then it will not be included in the returned vector.
+             */
+            const std::vector<GroupNode*> linkedGroups() const;
+
+            /**
+             * Indicates that this and the given group node are members of the same link set.
+             */
+            bool inLinkSetWith(const GroupNode& groupNode) const;
+
+            /**
+             * Adds the given group to this group's link set. The given group will not be linked to its new link set.
+             *
+             * The given group node is removed from its own link set.
+             */
+            void addToLinkSet(GroupNode& groupNode);
+            
+            /**
+             * Indicates whether this group node is connected to its link set.
+             */
+            bool linked() const;
+
+            /**
+             * Transitions this group from the linkable state to the link state, that is, the
+             * group is connected to its link set.
+             *
+             * Expects that this group is not currently connected to its link set.
+             */
+            void link();
+
+            /**
+             * Transitions this group from the linked state to the linkable state, that is, the
+             * group is disconnected from its link set.
+             *
+             * Expects that this group is currenctly connected to its link set.
+             */
+            void unlink();
         private:
             void setEditState(EditState editState);
             void setAncestorEditState(EditState editState);

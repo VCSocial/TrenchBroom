@@ -256,5 +256,181 @@ namespace TrenchBroom {
             CHECK(linkedGroupNode->linked());
             CHECK_THAT(linkedGroupNode->linkedGroups(), Catch::UnorderedEquals(std::vector<Model::GroupNode*>{groupNode, linkedGroupNode}));
         }
+
+        TEST_CASE_METHOD(GroupNodesTest, "GroupNodesTest.updateLinkedGroups", "[GroupNodesTest]") {
+            auto* brushNode = createBrushNode();
+            document->addNode(brushNode, document->parentForNodes());
+            document->select(brushNode);
+
+            auto* groupNode = document->groupSelection("test");
+            REQUIRE(groupNode != nullptr);
+
+            document->deselectAll();
+            document->select(groupNode);
+
+            auto* linkedGroupNode = document->createLinkedGroup();
+            REQUIRE(linkedGroupNode != nullptr);
+
+            document->deselectAll();
+            document->select(linkedGroupNode);
+
+            document->translateObjects(vm::vec3(32.0, 0.0, 0.0));
+            REQUIRE(linkedGroupNode->children().front()->physicalBounds() == brushNode->physicalBounds().translate(vm::vec3(32.0, 0.0, 0.0)));
+
+            document->deselectAll();
+            document->select(groupNode);
+            document->openGroup(groupNode);
+            
+            const auto originalBrushBounds = brushNode->physicalBounds();
+
+            document->select(brushNode);
+            document->translateObjects(vm::vec3(0.0, 16.0, 0.0));
+            document->deselectAll();
+            document->closeGroup();
+
+            REQUIRE(brushNode->physicalBounds() == originalBrushBounds.translate(vm::vec3(0.0, 16.0, 0.0)));
+
+            // changes were propagated
+            REQUIRE(document->world()->defaultLayer()->childCount() == 2u);
+            auto* newLinkedGroupNode = document->world()->defaultLayer()->children().back();
+            REQUIRE(newLinkedGroupNode != groupNode);
+
+            CHECK(newLinkedGroupNode->children().front()->physicalBounds() == brushNode->physicalBounds().translate(vm::vec3(32.0, 0.0, 0.0)));
+        }
+
+        TEST_CASE_METHOD(GroupNodesTest, "GroupNodesTest.updateNestedLinkedGroups", "[GroupNodesTest]") {
+            auto* brushNode = createBrushNode();
+            document->addNode(brushNode, document->parentForNodes());
+            document->select(brushNode);
+
+            /*
+            world
+            +-defaultLayer
+              +-brushNode
+            */
+
+            auto* innerGroupNode = document->groupSelection("inner");
+            REQUIRE(innerGroupNode != nullptr);
+
+            /*
+            world
+            +-defaultLayer
+              +-innerGroupNode
+                +-brushNode
+            */
+
+            document->deselectAll();
+            document->select(innerGroupNode);
+
+            auto* outerGroupNode = document->groupSelection("outer");
+            REQUIRE(outerGroupNode != nullptr);
+
+            /*
+            world
+            +-defaultLayer
+              +-outerGroupNode
+                +-innerGroupNode
+                  +-brushNode
+            */
+
+            document->deselectAll();
+            document->select(outerGroupNode);
+
+            auto* linkedOuterGroupNode = document->createLinkedGroup();
+            REQUIRE(linkedOuterGroupNode != nullptr);
+            REQUIRE(linkedOuterGroupNode->childCount() == 1u);
+
+            auto* linkedInnerGroupNode = linkedOuterGroupNode->children().front();
+            REQUIRE(linkedInnerGroupNode->childCount() == 1u);
+
+            /*
+            world
+            +-defaultLayer
+              +-outerGroupNode
+                +-innerGroupNode
+                  +-brushNode
+              +-linkedOuterGroupNode
+                +-linkedInnerGroupNode
+                  +-brushNode (linked clone)
+            */
+
+            document->deselectAll();
+            document->select(linkedOuterGroupNode);
+
+            document->translateObjects(vm::vec3(32.0, 0.0, 0.0));
+            REQUIRE(linkedOuterGroupNode->children().front()->physicalBounds() == brushNode->physicalBounds().translate(vm::vec3(32.0, 0.0, 0.0)));
+            REQUIRE(linkedInnerGroupNode->children().front()->physicalBounds() == brushNode->physicalBounds().translate(vm::vec3(32.0, 0.0, 0.0)));
+
+            /*
+            world
+            +-defaultLayer
+              +-outerGroupNode
+                +-innerGroupNode
+                  +-brushNode
+              +-linkedOuterGroupNode (translated by 32 0 0)
+                +-linkedInnerGroupNode (translated by 32 0 0)
+                  +-brushNode (linked clone) (translated by 32 0 0)
+            */
+
+            document->deselectAll();
+            document->select(outerGroupNode);
+            document->openGroup(outerGroupNode);
+            document->select(innerGroupNode);
+            document->openGroup(innerGroupNode);
+            
+            const auto originalBrushBounds = brushNode->physicalBounds();
+
+            document->select(brushNode);
+            document->translateObjects(vm::vec3(0.0, 16.0, 0.0));
+            REQUIRE(brushNode->physicalBounds() == originalBrushBounds.translate(vm::vec3(0.0, 16.0, 0.0)));
+
+            /*
+            world
+            +-defaultLayer
+              +-outerGroupNode
+                +-innerGroupNode
+                  +-brushNode (translated by 0 16 0)
+              +-linkedOuterGroupNode (translated by 32 0 0)
+                +-linkedInnerGroupNode (translated by 32 0 0)
+                  +-brushNode (linked clone) (translated by 32 0 0)
+            */
+
+            document->deselectAll();
+            document->closeGroup(); // innerGroupNode
+
+            /*
+            world
+            +-defaultLayer
+              +-outerGroupNode
+                +-innerGroupNode
+                  +-brushNode (translated by 0 16 0)
+              +-linkedOuterGroupNode (translated by 32 0 0)
+                +-newLinkedInnerGroupNode (translated by 32 0 0)
+                  +-brushNode (linked clone) (translated by 32 16 0)
+            */
+
+            document->closeGroup(); // outerGroupNode
+
+            /*
+            world
+            +-defaultLayer
+              +-outerGroupNode
+                +-innerGroupNode
+                  +-brushNode (translated by 0 16 0)
+              +-newLinkedOuterGroupNode (translated by 32 0 0)
+                +-newLinkedInnerGroupNodeClone (translated by 32 0 0)
+                  +-brushNode (linked clone) (translated by 32 16 0)
+            */
+
+            // changes were propagated
+            REQUIRE(document->world()->defaultLayer()->childCount() == 2u);
+            auto* newLinkedOuterGroupNode = document->world()->defaultLayer()->children().back();
+            
+            REQUIRE(newLinkedOuterGroupNode->childCount() == 1u);
+            auto* newLinkedInnerGroupNode = newLinkedOuterGroupNode->children().front();
+            
+            REQUIRE(newLinkedInnerGroupNode->childCount() == 1u);
+            CHECK(newLinkedInnerGroupNode->children().front()->physicalBounds() == brushNode->physicalBounds().translate(vm::vec3(32.0, 0.0, 0.0)));
+        }
     }
 }

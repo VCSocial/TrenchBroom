@@ -1316,19 +1316,39 @@ namespace TrenchBroom {
         }
 
         void MapDocument::closeGroup() {
-            const Transaction transaction(this, "Close Group");
+            Transaction transaction(this, "Close Group");
 
             deselectAll();
             Model::GroupNode* previousGroup = m_editorContext->currentGroup();
             resetLock(std::vector<Model::Node*>(1, previousGroup));
             executeAndStore(CurrentGroupCommand::pop());
 
-            Model::GroupNode* currentGroup = m_editorContext->currentGroup();
-            if (currentGroup != nullptr) {
-                unlock(std::vector<Model::Node*>(1, currentGroup));
-            } else {
-                unlock(std::vector<Model::Node*>(1, m_world.get()));
-            }
+            previousGroup->updateLinkedGroups(m_worldBounds)
+                .and_then([&](Model::UpdateLinkedGroupsResult&& updateResult) {
+                    auto toAdd = std::map<Model::Node*, std::vector<Model::Node*>>{};
+                    auto toRemove = std::vector<Model::Node*>{};
+
+                    for (auto& [oldLinkedNode, newLinkedNode] : updateResult) {
+                        auto* parent = oldLinkedNode->parent();
+                        toAdd[parent].push_back(newLinkedNode.release());
+                        toRemove.push_back(oldLinkedNode);
+                    }
+
+                    removeNodes(toRemove);
+                    addNodes(toAdd);
+
+                    Model::GroupNode* currentGroup = m_editorContext->currentGroup();
+                    if (currentGroup != nullptr) {
+                        unlock(std::vector<Model::Node*>(1, currentGroup));
+                    } else {
+                        unlock(std::vector<Model::Node*>(1, m_world.get()));
+                    }
+
+                    return kdl::void_result;
+                }).handle_errors([&](const Model::UpdateLinkedGroupsError& e) {
+                    error() << e;
+                    transaction.rollback();
+                });
         }
 
         Model::GroupNode* MapDocument::createLinkedGroup() {

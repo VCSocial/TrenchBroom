@@ -20,7 +20,10 @@
 #include "GroupNode.h"
 
 #include "FloatType.h"
+#include "Model/Brush.h"
+#include "Model/BrushError.h"
 #include "Model/BrushNode.h"
+#include "Model/Entity.h"
 #include "Model/EntityNode.h"
 #include "Model/IssueGenerator.h"
 #include "Model/LayerNode.h"
@@ -30,15 +33,31 @@
 #include "Model/WorldNode.h"
 
 #include <kdl/overload.h>
+#include <kdl/result.h>
+#include <kdl/string_utils.h>
 #include <kdl/vector_utils.h>
 
 #include <vecmath/ray.h>
 
+#include <ostream>
 #include <string>
 #include <vector>
 
 namespace TrenchBroom {
     namespace Model {
+        bool operator==(const UpdateLinkedGroupsError& lhs, const UpdateLinkedGroupsError& rhs) {
+            return lhs.message == rhs.message;
+        }
+
+        bool operator!=(const UpdateLinkedGroupsError& lhs, const UpdateLinkedGroupsError& rhs) {
+            return !(lhs == rhs);
+        }
+
+        std::ostream& operator<<(std::ostream& str, const UpdateLinkedGroupsError& e) {
+            str << e.message;
+            return str;
+        }
+
         struct GroupNode::SharedData {
             std::vector<GroupNode*> linkedGroups;
         };
@@ -115,6 +134,98 @@ namespace TrenchBroom {
         void GroupNode::unlink() {
             assert(linked());
             m_sharedData->linkedGroups = kdl::vec_erase(std::move(m_sharedData->linkedGroups), this);
+        }
+
+        static kdl::result<std::vector<std::unique_ptr<Node>>, UpdateLinkedGroupsError> cloneAndTransformChildren(const Node& node, const vm::bbox3& worldBounds, const vm::mat4x4& transformation) {
+            auto result = std::vector<std::unique_ptr<Node>>{};
+            result.reserve(node.childCount());
+
+            for (const auto* childNode : node.children()) {
+                using VisitResult = kdl::result<std::unique_ptr<Node>, UpdateLinkedGroupsError>;
+
+                UpdateLinkedGroupsError error;
+                const auto success = childNode->accept(kdl::overload(
+                    [] (const WorldNode*) -> VisitResult { return VisitResult::error(UpdateLinkedGroupsError{"Visited world node while updating linked groups"}); },
+                    [] (const LayerNode*) -> VisitResult { return VisitResult::error(UpdateLinkedGroupsError{"Visited layer node while updating linked groups"}); },
+                    [&](const GroupNode* groupNode) -> VisitResult {
+                        auto group = groupNode->group();
+                        group.transform(transformation);
+                        return VisitResult::success(std::make_unique<GroupNode>(std::move(group)));
+                    },
+                    [&](const EntityNode* entityNode)-> VisitResult {
+                        auto entity = entityNode->entity();
+                        entity.transform(transformation);
+                        return VisitResult::success(std::make_unique<EntityNode>(std::move(entity)));
+                    },
+                    [&](const BrushNode* brushNode) -> VisitResult {
+                        auto brush = brushNode->brush();
+                        return brush.transform(worldBounds, transformation, true)
+                            .visit(kdl::overload(
+                                [&]() -> VisitResult {
+                                    return VisitResult::success(std::make_unique<BrushNode>(std::move(brush)));
+                                },
+                                [](const BrushError e) -> VisitResult {
+                                    return VisitResult::error(UpdateLinkedGroupsError{kdl::str_to_string(e)});
+                                }
+                            ));
+                    }
+                )).and_then([&](std::unique_ptr<Node>&& newChildNode) {
+                    if (!worldBounds.contains(newChildNode->logicalBounds())) {
+                        return kdl::result<void, UpdateLinkedGroupsError>::error(UpdateLinkedGroupsError{"Linked node exceeds world bounds"});
+                    }
+                    return cloneAndTransformChildren(*childNode, worldBounds, transformation)
+                        .and_then([&](std::vector<std::unique_ptr<Node>>&& newChildren) {
+                            newChildNode->addChildren(kdl::vec_transform(std::move(newChildren), [](std::unique_ptr<Node>&& child) { return child.release(); }));
+                            result.push_back(std::move(newChildNode));
+                            return kdl::void_result;
+                        });
+                }).handle_errors([&](const UpdateLinkedGroupsError& e) {
+                    error = e;
+                });
+
+                if (!success) {
+                    return kdl::result<std::vector<std::unique_ptr<Node>>, UpdateLinkedGroupsError>::error(error);
+                }
+            }
+
+            return kdl::result<std::vector<std::unique_ptr<Node>>, UpdateLinkedGroupsError>::success(std::move(result));
+        }
+
+        kdl::result<UpdateLinkedGroupsResult, UpdateLinkedGroupsError> GroupNode::updateLinkedGroups(const vm::bbox3& worldBounds) {
+            assert(linked());
+
+            auto result = UpdateLinkedGroupsResult{};
+            result.reserve(m_sharedData->linkedGroups.size());
+
+            const auto [success, myInvertedTransformation] = vm::invert(m_group.transformation());
+            if (!success) {
+                return kdl::result<UpdateLinkedGroupsResult, UpdateLinkedGroupsError>::error(UpdateLinkedGroupsError{"Group transformation is not invertible"});
+            }
+
+            for (auto* linkedGroup : m_sharedData->linkedGroups) {
+                if (linkedGroup != this) {
+                    const auto transformation = linkedGroup->group().transformation() * myInvertedTransformation;
+
+                    UpdateLinkedGroupsError error;
+                    const auto success = cloneAndTransformChildren(*this, worldBounds, transformation)
+                        .and_then([&](std::vector<std::unique_ptr<Node>>&& newChildren) {
+                            auto linkedGroupClone = std::unique_ptr<GroupNode>{static_cast<GroupNode*>(linkedGroup->clone(worldBounds))};
+                            addToLinkSet(*linkedGroupClone);
+                            linkedGroupClone->addChildren(kdl::vec_transform(std::move(newChildren), [](auto c) { return c.release(); }));
+
+                            result.emplace_back(linkedGroup, std::move(linkedGroupClone));
+                            return kdl::void_result;
+                        }).handle_errors([&](const UpdateLinkedGroupsError e) {
+                            error = e;
+                        });
+                    
+                    if (!success) {
+                        return kdl::result<UpdateLinkedGroupsResult, UpdateLinkedGroupsError>::error(error);
+                    }
+                }
+            }
+
+            return kdl::result<UpdateLinkedGroupsResult, UpdateLinkedGroupsError>::success(std::move(result));
         }
 
         void GroupNode::setEditState(const EditState editState) {

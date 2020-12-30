@@ -432,5 +432,15 @@ namespace TrenchBroom {
             REQUIRE(newLinkedInnerGroupNode->childCount() == 1u);
             CHECK(newLinkedInnerGroupNode->children().front()->physicalBounds() == brushNode->physicalBounds().translate(vm::vec3(32.0, 0.0, 0.0)));
         }
+
+        TEST_CASE_METHOD(GroupNodesTest, "GroupNodesTest.resetPreservedEntityPropertiesWhenUngrouping", "[GroupNodesTest]") {
+          auto* entityNode = new Model::EntityNode();
+          auto entity = entityNode->entity();
+          entity.setPreservedProperties({ "some_key" });
+          entityNode->setEntity(std::move(entity));
+
+          document->addNode(entityNode, document->parentForNodes());
+          
+        }
     }
 }

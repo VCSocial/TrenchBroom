@@ -172,6 +172,10 @@ namespace TrenchBroom {
          */
         template <typename N, typename L>
         static bool applyAndSwap(MapDocument& document, const std::string& commandName, const std::vector<N*>& nodes, L lambda) {
+            if (nodes.empty()) {
+                return true;
+            }
+
             if (auto newNodes = applyToNodeContents(nodes, std::move(lambda))) {
                 document.swapNodeContents(commandName, std::move(*newNodes));
                 return true;
@@ -196,6 +200,10 @@ namespace TrenchBroom {
          */
         template <typename L>
         static bool applyAndSwap(MapDocument& document, const std::string& commandName, const std::vector<Model::BrushFaceHandle>& faces, L lambda) {
+            if (faces.empty()) {
+                return true;
+            }
+
             auto brushes = std::unordered_map<Model::BrushNode*, Model::Brush>{};
 
             bool success = true;

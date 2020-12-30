@@ -110,5 +110,57 @@ namespace TrenchBroom {
             CHECK(inner->parent() == outer);
             CHECK(outer->parent() == document->world()->defaultLayer());
         }
+
+        TEST_CASE_METHOD(RemoveNodesTest, "RemoveNodesTest.unlinkRemovedSingletonGroups") {
+            Model::GroupNode* group = new Model::GroupNode(Model::Group("group"));
+            REQUIRE_FALSE(group->linked());
+            
+            document->addNode(group, document->parentForNodes());
+            REQUIRE(group->linked());
+
+            document->removeNode(group);
+            CHECK_FALSE(group->linked());
+
+            document->undoCommand();
+            CHECK(group->linked());
+        }
+
+        TEST_CASE_METHOD(RemoveNodesTest, "RemoveNodesTest.unlinkRemovedLinkedGroups") {
+            Model::GroupNode* group = new Model::GroupNode(Model::Group("group"));
+            document->addNode(group, document->parentForNodes());
+            REQUIRE(group->linked());
+
+            document->select(group);
+            Model::GroupNode* linkedGroup = document->createLinkedGroup();
+            REQUIRE(linkedGroup->linked());
+
+            document->removeNode(group);
+            CHECK_FALSE(group->linked());
+            CHECK(linkedGroup->linked());
+
+            document->undoCommand();
+            CHECK(group->linked());
+        }
+
+        TEST_CASE_METHOD(RemoveNodesTest, "RemoveNodesTest.recursivelyUnlinkRemovedSingletonGroups") {
+            Model::GroupNode* outer = new Model::GroupNode(Model::Group("outer"));
+            Model::GroupNode* inner = new Model::GroupNode(Model::Group("inner"));
+            outer->addChild(inner);
+
+            REQUIRE_FALSE(outer->linked());
+            REQUIRE_FALSE(inner->linked());
+            
+            document->addNode(outer, document->parentForNodes());
+            REQUIRE(outer->linked());
+            REQUIRE(inner->linked());
+
+            document->removeNode(outer);
+            CHECK_FALSE(outer->linked());
+            CHECK_FALSE(inner->linked());
+
+            document->undoCommand();
+            CHECK(outer->linked());
+            CHECK(inner->linked());
+        }
     }
 }

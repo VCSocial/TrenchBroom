@@ -637,5 +637,23 @@ namespace TrenchBroom {
                 }
             ));
         }
+
+        TEST_CASE("GroupNodeTest.setSharedPersistentId", "[GroupNodeTest]") {
+            const auto worldBounds = vm::bbox3(8192.0);
+
+            auto groupNode = GroupNode{Group{"name"}};
+
+            auto groupNodeClone = std::unique_ptr<GroupNode>{static_cast<GroupNode*>(groupNode.cloneRecursively(worldBounds))};
+            groupNode.addToLinkSet(*groupNodeClone);
+            groupNodeClone->link();
+
+            groupNode.setPersistentId(2);
+            CHECK(groupNode.sharedPersistentId() == 2);
+            CHECK(groupNodeClone->sharedPersistentId() == 2);
+
+            groupNodeClone->setPersistentId(3);
+            CHECK(groupNodeClone->sharedPersistentId() == 2);
+
+        }
     }
 }

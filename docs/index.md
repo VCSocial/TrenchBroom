@@ -1720,7 +1720,7 @@ The following examples demonstrate the semantics of the case operator:
 
 The switch operator comprises of zero or more sub expressions and its evaluation returns the result of the first expression that does not evaluate to `undefined`. In combination with the case operator, it implements a piecewise defined function.
 
-    Switch = "{{" [ Expression { "," Expression } ] "}}"
+    
 
 The following example demonstrates a very simple `if / then / else` use of the switch term.
 

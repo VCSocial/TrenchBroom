@@ -1866,10 +1866,7 @@ So a valid model definitions might look like this:
 
 Sometimes, the actual model that is displayed in game depends on the value of an entity property. TrenchBroom allows you to mimick this behavior by using conditional expressions using the switch and case operators and by referring to the entity properties as variables in the expressions. Let's look at an example where we combine several model definitions using a literal value.
 
-    model({{
-		dangle == "1" -> { "path": "progs/voreling.mdl", "skin": 0, "frame": 13 },
-                         { "path": "progs/voreling.mdl" }
-    }})
+
 
 The voreling has two states, either as a normal monster, standing on the ground, or hanging from the ceiling. The model expression contains a switch expression (note the double braces) that comprises of a case expression (note the arrow operator) and a literal map expression. You can interpret this expression as follows:
 

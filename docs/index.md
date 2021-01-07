@@ -1963,16 +1963,6 @@ In both files, the model definitions are just specified alongside with other ent
 
 An example from an FGD file might look as follows.
 
-	@PointClass base(Monster) size(-32 -32 -24, 32 32 64)
-	    model({{ perch == "1" -> "progs/gaunt.mdl", { "path": "progs/gaunt.mdl", "skin": 0, "frame": 24 } }})
-	    = monster_gaunt : "Gaunt"
-	[
-	    perch(choices) : "Starting pose" : 0 =
-	    [
-	        0 : "Flying"
-	        1 : "On ground"
-	    ]
-	]
 
 To improve compatibility to other editors, the model definition can also be named _studio_ or _studioprop_ in FGD files.
 
